@@ -13,7 +13,7 @@ on:
 
 jobs:
   build:
-    name: build (${{ matrix.platform }})
+    name: build (${{ matrix.name }})
     runs-on: ${{ matrix.platform }}
     permissions:
       contents: write
@@ -21,12 +21,22 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: windows-latest
+          - name: windows
+            platform: windows-latest
             bundles: "msi,nsis"
-          - platform: ubuntu-22.04
+            args: ""
+          - name: linux
+            platform: ubuntu-22.04
             bundles: "deb,appimage"
-          - platform: macos-latest
+            args: ""
+          - name: macos-aarch64
+            platform: macos-latest
             bundles: "dmg"
+            args: "--target aarch64-apple-darwin"
+          - name: macos-x86_64
+            platform: macos-latest
+            bundles: "dmg"
+            args: "--target x86_64-apple-darwin"
 
     steps:
       - uses: actions/checkout@v4
@@ -38,6 +48,8 @@ jobs:
 
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
@@ -45,35 +57,45 @@ jobs:
           workspaces: |
             AXIOM -> target
 
+      - name: install Tauri CLI
+        run: cargo install tauri-cli --version 2.9.6 --locked
+
       - name: install dependencies (ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libgtk-3-dev
 
       - name: build (workflow artifacts)
         if: startsWith(github.ref, 'refs/tags/') == false && (github.event_name != 'workflow_dispatch' || github.event.inputs.tag == '')
-        uses: tauri-apps/tauri-action@v1
+        uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: AXIOM
-          uploadWorkflowArtifacts: true
-          workflowArtifactNamePattern: "axiom-[platform]-[arch]-[bundle]"
-          args: "--ci --no-sign --bundles ${{ matrix.bundles }}"
+          tauriScript: cargo tauri
+          args: "--ci --no-sign --bundles ${{ matrix.bundles }} ${{ matrix.args }}"
 
       - name: publish (GitHub release)
         if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.event.inputs.tag != '')
-        uses: tauri-apps/tauri-action@v1
+        uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: AXIOM
+          tauriScript: cargo tauri
           tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || github.event.inputs.tag }}
           releaseName: "AXIOM ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || github.event.inputs.tag }}"
           releaseBody: "See the assets to download and install this version."
           releaseDraft: true
           prerelease: false
-          uploadWorkflowArtifacts: true
-          workflowArtifactNamePattern: "axiom-[platform]-[arch]-[bundle]"
-          args: "--ci --no-sign --bundles ${{ matrix.bundles }}"
+          args: "--ci --no-sign --bundles ${{ matrix.bundles }} ${{ matrix.args }}"
+
+      - name: upload bundles (workflow artifacts)
+        uses: actions/upload-artifact@v4
+        with:
+          name: axiom-${{ matrix.name }}
+          path: |
+            AXIOM/target/release/bundle/**
+            AXIOM/src-tauri/target/release/bundle/**
+          if-no-files-found: warn
