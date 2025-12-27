@@ -1,0 +1,21 @@
+[package]
+name = "axiom-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "AXIOM Browser - Core application state and coordination"
+
+[dependencies]
+axiom-storage = { path = "../axiom-storage" }
+axiom-tabs = { path = "../axiom-tabs" }
+axiom-session = { path = "../axiom-session" }
+axiom-navigation = { path = "../axiom-navigation" }
+axiom-privacy = { path = "../axiom-privacy" }
+axiom-download = { path = "../axiom-download" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+parking_lot = { workspace = true }
+chrono = { workspace = true }

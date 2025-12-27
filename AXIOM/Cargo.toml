@@ -1,0 +1,49 @@
+[workspace]
+resolver = "2"
+members = [
+    "src-tauri",
+    "crates/axiom-core",
+    "crates/axiom-tabs",
+    "crates/axiom-session",
+    "crates/axiom-navigation",
+    "crates/axiom-storage",
+    "crates/axiom-privacy",
+    "crates/axiom-download",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["AXIOM Team"]
+license = "MIT"
+repository = "https://github.com/projectaxiom/axiom"
+
+[workspace.dependencies]
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Async runtime
+tokio = { version = "1.0", features = ["full"] }
+
+# Database
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# Utilities
+uuid = { version = "1.0", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "2.0"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+url = { version = "2.5", features = ["serde"] }
+parking_lot = "0.12"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+futures-util = "0.3"
+sha2 = "0.10"
+scraper = "0.25"
+
+# Tauri
+tauri = "2"
+tauri-build = "2"
+tauri-plugin-opener = "2"

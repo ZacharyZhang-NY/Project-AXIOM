@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AXIOM</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script type="module" src="main.js" defer></script>
+  </head>
+  <body>
+    <div id="app">
+      <!-- Sidebar: Primary control surface per PRD -->
+      <aside id="sidebar" class="sidebar">
+        <!-- Session indicator -->
+        <div class="sidebar-header">
+          <div id="session-name" class="session-name">Default</div>
+          <button id="new-tab-btn" class="icon-btn" title="New Tab">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Vertical tab list -->
+        <div id="tab-list" class="tab-list">
+          <!-- Tabs will be rendered here -->
+        </div>
+
+        <!-- Sidebar footer -->
+        <div class="sidebar-footer">
+          <button id="sessions-btn" class="icon-btn" title="Sessions (@sessions)">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.5"/>
+              <rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.5"/>
+              <rect x="2" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.5"/>
+              <rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.5"/>
+            </svg>
+          </button>
+          <button id="history-btn" class="icon-btn" title="History (@history)">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M8 4v4l2 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </button>
+          <button id="downloads-btn" class="icon-btn" title="Downloads">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M8 2v7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              <path d="M5 7l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M3 13.5h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </button>
+          <button id="theme-toggle-btn" class="icon-btn" title="Toggle theme">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M8 2.5V1M8 15v-1.5M3.05 3.05l-.9-.9M13.85 13.85l-.9-.9M1 8h1.5M13.5 8H15M3.05 12.95l-.9.9M13.85 2.15l-.9.9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+              <circle cx="8" cy="8" r="3.5" stroke="currentColor" stroke-width="1.3"/>
+            </svg>
+          </button>
+          <button id="settings-btn" class="icon-btn" title="Settings">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              <circle cx="6" cy="4" r="1.5" stroke="currentColor" stroke-width="1.5"/>
+              <circle cx="10" cy="8" r="1.5" stroke="currentColor" stroke-width="1.5"/>
+              <circle cx="5" cy="12" r="1.5" stroke="currentColor" stroke-width="1.5"/>
+            </svg>
+          </button>
+        </div>
+      </aside>
+
+      <!-- Main content area -->
+      <main id="main-content" class="main-content">
+        <!-- Address bar -->
+        <div class="toolbar">
+          <div class="navigation-buttons">
+            <button id="back-btn" class="nav-btn" title="Back" disabled>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+            <button id="forward-btn" class="nav-btn" title="Forward" disabled>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+            <button id="reload-btn" class="nav-btn" title="Reload">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M13.5 8a5.5 5.5 0 11-1.5-3.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                <path d="M13 2v3h-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+            <button id="reader-btn" class="nav-btn" title="Reader mode">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M3.5 3.5h6.5a2 2 0 012 2v8H5.5a2 2 0 00-2 2V3.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+                <path d="M12 13.5H6a2.5 2.5 0 00-2.5 2.5V4A2 2 0 015.5 2H12v11.5z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" opacity="0.35"/>
+              </svg>
+            </button>
+          </div>
+
+          <!-- Address bar with command support per PRD Section 5.3 -->
+          <div class="address-bar-container">
+            <input
+              type="text"
+              id="address-bar"
+              class="address-bar"
+              placeholder="Search or enter URL... (@tabs, @history, @sessions)"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <div id="address-suggestions" class="address-suggestions hidden">
+              <!-- Suggestions will be rendered here -->
+            </div>
+          </div>
+        </div>
+
+        <div id="bookmarks-bar" class="bookmarks-bar">
+          <div id="bookmarks-list" class="bookmarks-list"></div>
+          <button id="add-bookmark-btn" class="icon-btn bookmark-add-btn" title="Add bookmark">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M4 2.5h8a1 1 0 011 1v10L8 11l-5 2.5v-10a1 1 0 011-1z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+              <path d="M8 5v4M6 7h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- WebView container (content only per PRD) -->
+        <div id="webview-container" class="webview-container">
+          <div id="empty-state" class="empty-state">
+            <div class="empty-state-content">
+              <h1>AXIOM</h1>
+              <p>Vertical-tab-first. Privacy-native. Low-overhead.</p>
+              <p class="hint">Press <kbd>Ctrl</kbd>+<kbd>T</kbd> or click + to open a new tab</p>
+            </div>
+          </div>
+          <div id="tab-placeholder" class="tab-placeholder hidden">
+            <div class="tab-placeholder-content">
+              <h2 id="tab-placeholder-title">Tab discarded</h2>
+              <p id="tab-placeholder-url"></p>
+              <button id="tab-placeholder-restore" class="btn-primary" type="button">Restore</button>
+            </div>
+          </div>
+          <div id="reader-overlay" class="reader-overlay hidden" role="dialog" aria-modal="true">
+            <div class="reader-topbar">
+              <div class="reader-meta">
+                <div id="reader-domain" class="reader-domain"></div>
+                <div id="reader-title" class="reader-title"></div>
+              </div>
+              <div class="reader-controls">
+                <button id="reader-font-decrease" class="icon-btn" type="button" title="Decrease font">A-</button>
+                <button id="reader-font-increase" class="icon-btn" type="button" title="Increase font">A+</button>
+                <button id="reader-width-decrease" class="icon-btn" type="button" title="Narrow column">↔-</button>
+                <button id="reader-width-increase" class="icon-btn" type="button" title="Widen column">↔+</button>
+                <button id="reader-close-btn" class="icon-btn" type="button" title="Close reader" aria-label="Close">&times;</button>
+              </div>
+            </div>
+            <div class="reader-body">
+              <div id="reader-content" class="reader-content"></div>
+            </div>
+          </div>
+          <!-- WebView will be injected here -->
+        </div>
+      </main>
+    </div>
+
+    <!-- Session switcher modal -->
+    <div id="session-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Sessions</h2>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div id="session-list" class="session-list">
+          <!-- Sessions will be rendered here -->
+        </div>
+        <div class="modal-footer">
+          <input type="text" id="new-session-name" placeholder="New session name..." />
+          <button id="create-session-btn" class="btn-primary">Create</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- History modal -->
+    <div id="history-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content modal-content-wide">
+        <div class="modal-header">
+          <h2>History</h2>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="history-controls">
+          <input
+            type="text"
+            id="history-search"
+            class="history-search"
+            placeholder="Search history..."
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <div class="history-clear">
+            <select id="history-clear-range" class="history-clear-range">
+              <option value="all">All time</option>
+              <option value="15m">Last 15 minutes</option>
+              <option value="1h">Last hour</option>
+              <option value="24h">Last 24 hours</option>
+              <option value="7d">Last 7 days</option>
+              <option value="30d">Last 30 days</option>
+              <option value="custom">Custom range</option>
+            </select>
+            <input type="datetime-local" id="history-clear-start" class="history-clear-dt" />
+            <input type="datetime-local" id="history-clear-end" class="history-clear-dt" />
+            <button id="clear-history-btn" class="btn-secondary">Clear</button>
+          </div>
+        </div>
+        <div id="history-list" class="history-list"></div>
+      </div>
+    </div>
+
+    <!-- Downloads modal -->
+    <div id="downloads-modal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content modal-content-wide">
+        <div class="modal-header">
+          <h2>Downloads</h2>
+          <button class="modal-close" aria-label="Close">&times;</button>
+        </div>
+        <div id="downloads-list" class="downloads-list"></div>
+      </div>
+    </div>
+
+    <!-- Settings modal -->
+    <div id="settings-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Settings</h2>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="settings-body">
+          <div class="settings-section">
+            <label for="search-engine-select">Default search engine</label>
+            <select id="search-engine-select">
+              <option value="google">Google</option>
+              <option value="bing">Bing</option>
+              <option value="duckduckgo">DuckDuckGo</option>
+            </select>
+          </div>
+          <div class="settings-section">
+            <label for="bookmarks-bar-toggle">Bookmarks bar</label>
+            <div class="settings-toggle">
+              <span>Show bookmarks bar</span>
+              <input type="checkbox" id="bookmarks-bar-toggle" />
+            </div>
+          </div>
+          <div class="settings-section">
+            <label>Autofill (basic)</label>
+            <div class="settings-toggle">
+              <span>Enable form autofill</span>
+              <input type="checkbox" id="autofill-toggle" />
+            </div>
+            <div class="settings-fields">
+              <div class="settings-field">
+                <label for="autofill-name">Name</label>
+                <input
+                  type="text"
+                  id="autofill-name"
+                  placeholder="Name"
+                  autocomplete="name"
+                />
+              </div>
+              <div class="settings-field">
+                <label for="autofill-email">Email</label>
+                <input
+                  type="email"
+                  id="autofill-email"
+                  placeholder="Email"
+                  autocomplete="email"
+                />
+              </div>
+            </div>
+            <div class="settings-toggle">
+              <span>Password save prompts (system)</span>
+              <input type="checkbox" id="password-save-toggle" />
+            </div>
+          </div>
+          <div class="settings-section">
+            <label>Bookmarks</label>
+            <div class="settings-actions">
+              <button id="manage-bookmarks-btn" class="btn-secondary" type="button">Manage bookmarks</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bookmarks modal -->
+    <div id="bookmarks-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content modal-content-wide">
+        <div class="modal-header">
+          <h2>Bookmarks</h2>
+          <button class="modal-close">&times;</button>
+        </div>
+        <div class="bookmarks-manager-controls">
+          <input
+            type="text"
+            id="bookmarks-search"
+            class="history-search"
+            placeholder="Search bookmarks..."
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <div class="bookmarks-manager-actions">
+            <select id="bookmarks-folder-filter" class="history-clear-range"></select>
+            <button id="bookmarks-new-btn" class="btn-secondary" type="button">New</button>
+            <label class="btn-secondary file-button" for="bookmarks-import-file">
+              Import HTML
+            </label>
+            <input type="file" id="bookmarks-import-file" accept=".html,text/html" class="file-input" />
+            <button id="bookmarks-export-btn" class="btn-secondary" type="button">Export HTML</button>
+          </div>
+        </div>
+        <div class="bookmarks-manager-body">
+          <div id="bookmarks-manager-list" class="bookmarks-manager-list"></div>
+          <form id="bookmarks-editor" class="bookmarks-editor">
+            <input type="text" id="bookmark-edit-title" placeholder="Title" />
+            <input type="text" id="bookmark-edit-url" placeholder="URL" />
+            <input type="text" id="bookmark-edit-folder" placeholder="Folder (optional)" />
+            <div class="bookmarks-editor-actions">
+              <button id="bookmark-save-btn" class="btn-primary" type="submit">Save</button>
+              <button id="bookmark-delete-btn" class="btn-secondary" type="button">Delete</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+    <!-- Permission prompt -->
+    <div id="permission-prompt" class="permission-prompt hidden">
+      <div class="permission-content">
+        <span id="permission-message"></span>
+        <div class="permission-actions">
+          <button id="permission-deny" class="btn-secondary">Deny</button>
+          <button id="permission-allow" class="btn-primary">Allow</button>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

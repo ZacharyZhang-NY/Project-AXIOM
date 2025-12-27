@@ -1,0 +1,30 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "AXIOM",
+  "version": "0.1.0",
+  "identifier": "com.projectaxiom.axiom",
+  "build": {
+    "frontendDist": "../src"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [],
+    "security": {
+      "csp": "default-src 'self' https: http:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https: http:; connect-src 'self' https: http: ws: wss:; frame-src https: http:; child-src https: http:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "Utility",
+    "shortDescription": "Vertical-tab-first, privacy-native browser",
+    "longDescription": "AXIOM is a vertical-tab-first, privacy-native, low-overhead browser designed for users who spend hours per day in the browser and want clarity, control, and silence instead of algorithmic noise."
+  }
+}

@@ -1,0 +1,38 @@
+[package]
+name = "axiom"
+version = "0.1.0"
+description = "AXIOM Browser - Vertical-tab-first, privacy-native browser"
+authors = ["AXIOM Team"]
+edition = "2021"
+
+[lib]
+name = "axiom_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# Tauri
+tauri = { version = "2", features = ["unstable"] }
+tauri-plugin-opener = "2"
+
+# AXIOM Core
+axiom-core = { path = "../crates/axiom-core" }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Async
+tokio = { version = "1", features = ["full"] }
+
+# Utilities
+tracing = "0.1"
+parking_lot = "0.12"
+url = "2.5"
+chrono = { workspace = true }
+reqwest = { workspace = true }
+futures-util = { workspace = true }
+sha2 = { workspace = true }
+scraper = { workspace = true }
