@@ -23,6 +23,6 @@ dist-ssr
 *.sln
 *.sw?
 nul
-*.md
+PRD.md
 .vscode
 target
