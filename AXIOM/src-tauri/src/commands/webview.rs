@@ -339,7 +339,6 @@ pub async fn create_webview(
 
     // Build the child webview
     let mut webview_builder = WebviewBuilder::new(&webview_label, webview_url)
-        .transparent(false)
         .auto_resize()
         .enable_clipboard_access()
         .initialization_script_for_all_frames(PRIVACY_INIT_SCRIPT);
@@ -349,14 +348,14 @@ pub async fn create_webview(
     }
 
     let webview_builder = webview_builder
-        .on_navigation(move |url| {
+        .on_navigation(move |url: &url::Url| {
             if matches!(url.scheme(), "tauri" | "about" | "axiom") {
                 return true;
             }
 
             true
         })
-        .on_page_load(move |webview, payload| {
+        .on_page_load(move |webview: tauri::webview::Webview<_>, payload: tauri::webview::PageLoadPayload<'_>| {
             let url = payload.url().to_string();
             if let Some(state) = app_handle_for_load.try_state::<AppState>() {
                 match payload.event() {
@@ -479,7 +478,7 @@ pub async fn create_webview(
 
             let _ = app_handle_for_load.emit_to(ui_label_for_load.as_str(), "tabs-updated", ());
         })
-        .on_document_title_changed(move |_webview, title| {
+        .on_document_title_changed(move |_webview: tauri::webview::Webview<_>, title: String| {
             if let Some(state) = app_handle_for_title.try_state::<AppState>() {
                 let _ = state.with_browser(|browser| {
                     browser.set_tab_title(&tab_id_for_title, title.clone())
@@ -488,7 +487,7 @@ pub async fn create_webview(
 
             let _ = app_handle_for_title.emit_to(ui_label_for_title.as_str(), "tabs-updated", ());
         })
-        .on_new_window(move |url, _features| {
+        .on_new_window(move |url: url::Url, _features: tauri::webview::NewWindowFeatures| {
             let _ = app_handle_for_new_window.emit_to(
                 ui_label_for_new_window.as_str(),
                 "new-window-requested",
