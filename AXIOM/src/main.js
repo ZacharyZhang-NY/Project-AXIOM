@@ -5,7 +5,30 @@
  * This UI layer only renders state received from the Rust core.
  */
 
-const invoke = window?.__TAURI__?.core?.invoke;
+const invokeRaw = window?.__TAURI__?.core?.invoke;
+
+function toSnakeCaseKey(key) {
+  if (!key || key.includes('_')) return key;
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+    .toLowerCase();
+}
+
+function normalizeInvokeArgs(args) {
+  if (!args || typeof args !== 'object' || Array.isArray(args)) return args;
+  const normalized = {};
+  for (const [key, value] of Object.entries(args)) {
+    // Preserve original key for commands that expect camelCase
+    normalized[key] = value;
+    // Also provide snake_case for commands that expect it
+    const snake = toSnakeCaseKey(key);
+    normalized[snake] = value;
+  }
+  return normalized;
+}
+
+const invoke = (command, args) => invokeRaw(command, normalizeInvokeArgs(args));
 
 // ============================================
 // State
@@ -26,10 +49,13 @@ let readerTypography = { fontSize: 18, maxWidth: 760 };
 let readerSourceTabId = null;
 const TAB_IDLE_FREEZE_MS = 5 * 60 * 1000;
 const TAB_IDLE_DISCARD_MS = 30 * 60 * 1000;
+const POPUP_AUTO_OPEN_COOLDOWN_MS = 1200;
+let lastPopupAutoOpenAt = 0;
 let bookmarksBarVisible = true;
 let selectedBookmarkUrl = null;
 let draggingTabId = null;
 let draggingDidDrop = false;
+let uiOverlayDepth = 0;
 
 async function invokeCommand(command, args) {
   const result = await invoke(command, args);
@@ -43,6 +69,36 @@ async function invokeCommand(command, args) {
   }
 
   return result.data;
+}
+
+async function beginUiOverlay() {
+  uiOverlayDepth += 1;
+  if (uiOverlayDepth !== 1) return;
+
+  if (!activeTabId) return;
+
+  try {
+    await invokeCommand('hide_webview', { tabId: activeTabId });
+  } catch (error) {
+    console.warn('Failed to hide active webview for overlay:', error);
+  }
+}
+
+async function endUiOverlay() {
+  if (uiOverlayDepth <= 0) return;
+
+  uiOverlayDepth -= 1;
+  if (uiOverlayDepth !== 0) return;
+
+  const tab = getActiveTab();
+  if (!tab || !tab.id || tab.state === 'discarded') return;
+
+  try {
+    await invokeCommand('show_webview', { tabId: tab.id });
+  } catch (error) {
+    // Webview might not exist yet (e.g., no page loaded). Keep UI responsive.
+    console.warn('Failed to restore active webview after overlay:', error);
+  }
 }
 
 const SEARCH_ENGINES = {
@@ -697,13 +753,15 @@ async function handlePasswordSaveToggle() {
   }
 }
 
-function openSettingsModal() {
+async function openSettingsModal() {
+  await beginUiOverlay();
   elements.settingsModal.classList.remove('hidden');
   elements.searchEngineSelect.focus();
 }
 
 function closeSettingsModal() {
   elements.settingsModal.classList.add('hidden');
+  endUiOverlay();
 }
 
 function updateNavigationButtons() {
@@ -735,7 +793,7 @@ async function navigateBack() {
   if (!activeTabId) return;
 
   try {
-    await invokeCommand('webview_back', { tab_id: activeTabId });
+    await invokeCommand('webview_back', { tabId: activeTabId });
   } catch (error) {
     console.error('Failed to navigate back:', error);
   }
@@ -745,7 +803,7 @@ async function navigateForward() {
   if (!activeTabId) return;
 
   try {
-    await invokeCommand('webview_forward', { tab_id: activeTabId });
+    await invokeCommand('webview_forward', { tabId: activeTabId });
   } catch (error) {
     console.error('Failed to navigate forward:', error);
   }
@@ -755,7 +813,7 @@ async function reloadPage() {
   if (!activeTabId) return;
 
   try {
-    await invokeCommand('reload_webview', { tab_id: activeTabId });
+    await invokeCommand('reload_webview', { tabId: activeTabId });
   } catch (error) {
     console.error('Failed to reload page:', error);
   }
@@ -765,7 +823,7 @@ async function forceReloadPage() {
   if (!activeTabId) return;
 
   try {
-    await invokeCommand('force_reload_webview', { tab_id: activeTabId });
+    await invokeCommand('force_reload_webview', { tabId: activeTabId });
   } catch (error) {
     console.error('Failed to force reload page:', error);
   }
@@ -775,7 +833,7 @@ async function stopLoading() {
   if (!activeTabId) return;
 
   try {
-    await invokeCommand('stop_webview_loading', { tab_id: activeTabId });
+    await invokeCommand('stop_webview_loading', { tabId: activeTabId });
   } catch (error) {
     console.error('Failed to stop loading:', error);
   }
@@ -848,6 +906,7 @@ async function openReaderMode() {
   }
 
   readerSourceTabId = tab.id || activeTabId;
+  await beginUiOverlay();
   elements.readerOverlay.classList.remove('hidden');
   applyReaderTypography();
   elements.addressSuggestions.classList.add('hidden');
@@ -891,6 +950,7 @@ function closeReaderMode({ restoreFocus = true } = {}) {
   elements.readerOverlay.classList.add('hidden');
   elements.readerContent.innerHTML = '';
   readerSourceTabId = null;
+  endUiOverlay();
   if (restoreFocus) {
     elements.readerBtn?.focus();
   }
@@ -977,6 +1037,7 @@ function renderBookmarks() {
 async function openBookmarksModal() {
   if (!elements.bookmarksModal) return;
 
+  await beginUiOverlay();
   closeSettingsModal();
   elements.bookmarksModal.classList.remove('hidden');
   elements.bookmarksSearch.value = '';
@@ -998,6 +1059,7 @@ function closeBookmarksModal() {
   if (!elements.bookmarksModal) return;
   elements.bookmarksModal.classList.add('hidden');
   selectedBookmarkUrl = null;
+  endUiOverlay();
 }
 
 async function refreshBookmarksFolderFilter() {
@@ -1126,7 +1188,7 @@ async function saveBookmarkEdits(e) {
 
   try {
     const bookmarks = selectedBookmarkUrl
-      ? await invokeCommand('update_bookmark', { old_url: selectedBookmarkUrl, title, url, folder })
+      ? await invokeCommand('update_bookmark', { oldUrl: selectedBookmarkUrl, title, url, folder })
       : await invokeCommand('add_bookmark', { title, url, folder });
 
     currentBookmarks = Array.isArray(bookmarks) ? bookmarks : [];
@@ -1291,15 +1353,6 @@ function hostForUrl(url) {
 async function navigateToUrl(url) {
   try {
     const cleanedUrl = await invokeCommand('clean_url', { url });
-    const blocked = await invokeCommand('should_block_url', { url: cleanedUrl });
-    if (blocked) {
-      showToast({
-        title: 'Blocked by tracking protection',
-        message: cleanedUrl,
-        timeout: 6000,
-      });
-      return;
-    }
 
     const probe = await invokeCommand('probe_url', { url: cleanedUrl });
     if (probe && probe.ok === false) {
@@ -1336,7 +1389,7 @@ async function navigateToUrl(url) {
 
     if (activeTabId) {
       try {
-        await invoke('activate_tab', { tab_id: activeTabId });
+        await invoke('activate_tab', { tabId: activeTabId });
       } catch (error) {
         console.warn('Failed to restore active tab:', error);
       }
@@ -1346,14 +1399,14 @@ async function navigateToUrl(url) {
       const afterHost = hostForUrl(targetUrl);
       if (beforeHost && afterHost && beforeHost !== afterHost) {
         try {
-          await invokeCommand('close_webview', { tab_id: activeTabId });
+          await invokeCommand('close_webview', { tabId: activeTabId });
         } catch (error) {
           console.warn('Failed to re-partition webview storage:', error);
         }
       }
-      await invokeCommand('navigate_tab', { tab_id: activeTabId, url: targetUrl });
+      await invokeCommand('navigate_tab', { tabId: activeTabId, url: targetUrl });
       await ensureWebview({ id: activeTabId, url: targetUrl });
-      await invokeCommand('navigate_webview', { tab_id: activeTabId, url: targetUrl });
+      await invokeCommand('navigate_webview', { tabId: activeTabId, url: targetUrl });
       await refreshTabs();
       return;
     }
@@ -1408,7 +1461,7 @@ async function refreshTabs() {
     }
 
     if (!activeTab && currentTabs.length > 0) {
-      const fallback = await invoke('activate_tab', { tab_id: currentTabs[0].id });
+      const fallback = await invoke('activate_tab', { tabId: currentTabs[0].id });
       if (fallback.success && fallback.data) {
         activeTab = fallback.data;
         activeTabId = activeTab.id;
@@ -1481,13 +1534,13 @@ async function tabHousekeepingTick() {
 
 async function freezeAndUnloadTab(tabId) {
   try {
-    await invokeCommand('close_webview', { tab_id: tabId });
+    await invokeCommand('close_webview', { tabId });
   } catch (error) {
     console.warn('Failed to close webview for freeze:', error);
   }
 
   try {
-    await invokeCommand('freeze_tab', { tab_id: tabId });
+    await invokeCommand('freeze_tab', { tabId });
   } catch (error) {
     console.warn('Failed to freeze tab:', error);
   }
@@ -1495,13 +1548,13 @@ async function freezeAndUnloadTab(tabId) {
 
 async function discardAndUnloadTab(tabId) {
   try {
-    await invokeCommand('close_webview', { tab_id: tabId });
+    await invokeCommand('close_webview', { tabId });
   } catch (error) {
     console.warn('Failed to close webview for discard:', error);
   }
 
   try {
-    await invokeCommand('discard_tab', { tab_id: tabId });
+    await invokeCommand('discard_tab', { tabId });
   } catch (error) {
     console.warn('Failed to discard tab:', error);
   }
@@ -1636,9 +1689,9 @@ async function createNewTab() {
 async function closeTab(tabId) {
   try {
     // Close native webview
-    await invokeCommand('close_webview', { tab_id: tabId });
+    await invokeCommand('close_webview', { tabId });
 
-    const result = await invoke('close_tab', { tab_id: tabId });
+    const result = await invoke('close_tab', { tabId });
     if (result.success) {
       await refreshTabs();
     }
@@ -1651,8 +1704,8 @@ async function detachTabToNewWindow(tabId) {
   if (!tabId) return;
 
   try {
-    await invokeCommand('close_webview', { tab_id: tabId });
-    await invokeCommand('detach_tab_to_new_window', { tab_id: tabId });
+    await invokeCommand('close_webview', { tabId });
+    await invokeCommand('detach_tab_to_new_window', { tabId });
     await refreshTabs();
   } catch (error) {
     console.error('Failed to detach tab to new window:', error);
@@ -1675,7 +1728,7 @@ async function restoreLastClosedTab() {
 
 async function activateTab(tabId) {
   try {
-    const result = await invoke('activate_tab', { tab_id: tabId });
+    const result = await invoke('activate_tab', { tabId });
     if (result.success) {
       activeTabId = tabId;
 
@@ -1754,7 +1807,7 @@ function handleTabDragEnd(e) {
 
 async function reorderTab(tabId, newIndex) {
   try {
-    const result = await invoke('reorder_tab', { tab_id: tabId, new_index: newIndex });
+    const result = await invoke('reorder_tab', { tabId, newIndex });
     if (result.success) {
       await refreshTabs();
     }
@@ -1794,7 +1847,7 @@ async function restoreDiscardedActiveTab() {
   if (!tab || !tab.id) return;
 
   try {
-    await invoke('activate_tab', { tab_id: tab.id });
+    await invoke('activate_tab', { tabId: tab.id });
     hideTabPlaceholder();
     await refreshTabs();
   } catch (error) {
@@ -1804,9 +1857,12 @@ async function restoreDiscardedActiveTab() {
 
 async function ensureWebview(tab) {
   if (!tab) return;
+  if (!tab.id) {
+    throw new Error('Missing tab id');
+  }
 
   const url = tab.url || 'about:blank';
-  await invokeCommand('create_webview', { tab_id: tab.id, url });
+  await invokeCommand('create_webview', { tabId: tab.id, url });
 }
 
 async function ensureActiveWebview(tab) {
@@ -1815,7 +1871,7 @@ async function ensureActiveWebview(tab) {
   if (tab.state === 'discarded') {
     showTabPlaceholder(tab);
     try {
-      await invokeCommand('close_webview', { tab_id: tab.id });
+      await invokeCommand('close_webview', { tabId: tab.id });
     } catch (error) {
       console.warn('Failed to close discarded webview:', error);
     }
@@ -1838,8 +1894,12 @@ async function ensureActiveWebview(tab) {
     });
     return;
   }
+
+  // If an overlay is open (modal / reader), keep content webview hidden so UI stays usable.
+  if (uiOverlayDepth > 0) return;
+
   try {
-    await invokeCommand('show_webview', { tab_id: tab.id });
+    await invokeCommand('show_webview', { tabId: tab.id });
   } catch (error) {
     console.error('Failed to show webview:', error);
     showToast({
@@ -2230,12 +2290,13 @@ function updateSessionDisplay() {
 }
 
 async function openSessionModal() {
+  await beginUiOverlay();
+  elements.sessionModal.classList.remove('hidden');
   try {
     const result = await invoke('get_sessions');
     if (result.success) {
       renderSessionList(result.data);
     }
-    elements.sessionModal.classList.remove('hidden');
     elements.newSessionName.focus();
   } catch (error) {
     console.error('Failed to load sessions:', error);
@@ -2245,6 +2306,7 @@ async function openSessionModal() {
 function closeSessionModal() {
   elements.sessionModal.classList.add('hidden');
   elements.newSessionName.value = '';
+  endUiOverlay();
 }
 
 function renderSessionList(sessions) {
@@ -2282,7 +2344,7 @@ async function createNewSession() {
 
   async function switchSession(sessionId) {
   try {
-    const result = await invoke('switch_session', { session_id: sessionId });
+    const result = await invoke('switch_session', { sessionId });   
     if (result.success) {
       currentSession = result.data;
       updateSessionDisplay();
@@ -2303,6 +2365,7 @@ let historySearchHandle = null;
 async function openHistoryModal(initialQuery = '') {
   if (!elements.historyModal) return;
 
+  await beginUiOverlay();
   elements.historyModal.classList.remove('hidden');
   handleHistoryClearRangeChange();
   elements.historySearch.value = initialQuery;
@@ -2318,6 +2381,7 @@ async function openHistoryModal(initialQuery = '') {
 function closeHistoryModal() {
   if (!elements.historyModal) return;
   elements.historyModal.classList.add('hidden');
+  endUiOverlay();
 }
 
 // ============================================
@@ -2336,13 +2400,13 @@ function handleNewWindowRequested(payload) {
       cleaned = url;
     }
 
-    try {
-      const blocked = await invokeCommand('should_block_url', { url: cleaned });
-      if (blocked) {
-        showToast({ title: 'Popup blocked', message: cleaned, timeout: 6000 });
-        return;
-      }
-    } catch {}
+    const now = Date.now();
+    if (now - lastPopupAutoOpenAt >= POPUP_AUTO_OPEN_COOLDOWN_MS) {
+      lastPopupAutoOpenAt = now;
+      await openUrlWithDisposition(cleaned, 'new_foreground_tab');
+      showToast({ title: 'Opened in new tab', message: cleaned, timeout: 3500 });
+      return;
+    }
 
     showToast({
       title: 'Popup requested',
@@ -2361,6 +2425,7 @@ function handleNewWindowRequested(payload) {
 async function openDownloadsModal() {
   if (!elements.downloadsModal || !elements.downloadsList) return;
 
+  await beginUiOverlay();
   elements.downloadsModal.classList.remove('hidden');
   elements.downloadsList.innerHTML = '';
   await refreshDownloads();
@@ -2369,6 +2434,7 @@ async function openDownloadsModal() {
 function closeDownloadsModal() {
   if (!elements.downloadsModal) return;
   elements.downloadsModal.classList.add('hidden');
+  endUiOverlay();
 }
 
 function isDownloadsModalOpen() {
@@ -2627,7 +2693,7 @@ function makeDownloadActionButton(label, onClick, kind) {
 
 async function startDownload(downloadId) {
   try {
-    const updated = await invokeCommand('start_download', { download_id: downloadId });
+    const updated = await invokeCommand('start_download', { downloadId });
     handleDownloadUpdated(updated);
   } catch (error) {
     console.error('Failed to start download:', error);
@@ -2636,7 +2702,7 @@ async function startDownload(downloadId) {
 
 async function pauseDownload(downloadId) {
   try {
-    const updated = await invokeCommand('pause_download', { download_id: downloadId });
+    const updated = await invokeCommand('pause_download', { downloadId });
     handleDownloadUpdated(updated);
   } catch (error) {
     console.error('Failed to pause download:', error);
@@ -2645,7 +2711,7 @@ async function pauseDownload(downloadId) {
 
 async function resumeDownload(downloadId) {
   try {
-    const updated = await invokeCommand('resume_download', { download_id: downloadId });
+    const updated = await invokeCommand('resume_download', { downloadId });
     handleDownloadUpdated(updated);
   } catch (error) {
     console.error('Failed to resume download:', error);
@@ -2654,7 +2720,7 @@ async function resumeDownload(downloadId) {
 
 async function cancelDownload(downloadId) {
   try {
-    const updated = await invokeCommand('cancel_download', { download_id: downloadId });
+    const updated = await invokeCommand('cancel_download', { downloadId });
     handleDownloadUpdated(updated);
   } catch (error) {
     console.error('Failed to cancel download:', error);
@@ -2663,7 +2729,7 @@ async function cancelDownload(downloadId) {
 
 async function revealDownload(downloadId) {
   try {
-    await invokeCommand('reveal_download', { download_id: downloadId });
+    await invokeCommand('reveal_download', { downloadId });    
   } catch (error) {
     console.error('Failed to reveal download:', error);
   }

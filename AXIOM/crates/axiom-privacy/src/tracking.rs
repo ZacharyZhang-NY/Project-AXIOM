@@ -63,6 +63,8 @@ pub enum TrackingAction {
 pub struct TrackingProtection {
     /// Blocked domains
     blocked_domains: HashSet<String>,
+    /// Domains we never block (search engines, common CDNs)
+    allow_domains: HashSet<String>,
     /// Tracking parameters to strip
     strip_params: HashSet<String>,
     /// Whether protection is enabled
@@ -76,8 +78,32 @@ impl TrackingProtection {
             strip_params.insert(param.to_string());
         }
 
+        let allow_domains: HashSet<String> = [
+            // Search engines
+            "google.com",
+            "www.google.com",
+            "bing.com",
+            "www.bing.com",
+            "duckduckgo.com",
+            "www.duckduckgo.com",
+            // Video / media
+            "youtube.com",
+            "www.youtube.com",
+            "youtu.be",
+            "googlevideo.com",
+            "gstatic.com",
+            "ytimg.com",
+            // Known safe
+            "stablelance.com",
+            "www.stablelance.com",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+
         Self {
             blocked_domains: HashSet::new(),
+            allow_domains,
             strip_params,
             enabled: true,
         }
@@ -115,9 +141,22 @@ impl TrackingProtection {
             return false;
         }
 
+        if self.blocked_domains.is_empty() {
+            return false;
+        }
+
         if let Ok(parsed) = Url::parse(url) {
             if let Some(host) = parsed.host_str() {
                 let host = host.to_lowercase();
+
+                // Never block allowlisted domains or their parent domains
+                let parts: Vec<&str> = host.split('.').collect();
+                for i in 0..parts.len() {
+                    let parent = parts[i..].join(".");
+                    if self.allow_domains.contains(&parent) {
+                        return false;
+                    }
+                }
 
                 // Check exact match
                 if self.blocked_domains.contains(&host) {
@@ -125,7 +164,6 @@ impl TrackingProtection {
                 }
 
                 // Check parent domains
-                let parts: Vec<&str> = host.split('.').collect();
                 for i in 0..parts.len() {
                     let parent = parts[i..].join(".");
                     if self.blocked_domains.contains(&parent) {

@@ -14,6 +14,104 @@ use super::tabs::CommandResult;
 use crate::commands::downloads::DownloadInfo;
 use crate::state::AppState;
 
+const SIDEBAR_WIDTH: f64 = 260.0;
+const TOOLBAR_HEIGHT: f64 = 48.0;
+
+const FORCE_DARK_STYLE_ID: &str = "axiom-force-dark";
+const FORCE_DARK_ENABLE_SCRIPT: &str = r#"
+(() => {
+  try {
+    const id = '__AXIOM_FORCE_DARK_STYLE_ID__';
+    const isTransparent = (value) => {
+      if (!value) return true;
+      const v = String(value).toLowerCase().replace(/\s+/g, '');
+      return v === 'transparent' || v === 'rgba(0,0,0,0)' || v === 'rgba(0,0,0,0.0)';
+    };
+    const parseRgb = (value) => {
+      const m = String(value).match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+      if (!m) return null;
+      return [Number(m[1]), Number(m[2]), Number(m[3])];
+    };
+    const brightness = (rgb) => (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000;
+    const getBg = (el) => {
+      try {
+        return el ? getComputedStyle(el).backgroundColor : null;
+      } catch {
+        return null;
+      }
+    };
+
+    const candidates = [];
+    candidates.push(getBg(document.body));
+    if (document.body) {
+      candidates.push(getBg(document.body.firstElementChild));
+      candidates.push(getBg(document.body.firstElementChild?.firstElementChild));
+      candidates.push(getBg(document.querySelector('main')));
+    }
+
+    let bgRgb = null;
+    for (const bg of candidates) {
+      if (isTransparent(bg)) continue;
+      const rgb = parseRgb(bg);
+      if (rgb) {
+        bgRgb = rgb;
+        break;
+      }
+    }
+    const looksDark = bgRgb ? brightness(bgRgb) < 140 : false;
+
+    let style = document.getElementById(id);
+    if (looksDark) {
+      if (style) style.remove();
+      try { document.documentElement.style.colorScheme = 'dark'; } catch {}
+      return;
+    }
+
+    if (!style) {
+      style = document.createElement('style');
+      style.id = id;
+      style.textContent = `
+html { filter: invert(1) hue-rotate(180deg) !important; background: #111 !important; }
+img, video, picture, canvas, iframe, svg { filter: invert(1) hue-rotate(180deg) !important; }
+`;
+      document.documentElement.appendChild(style);
+    }
+    try { document.documentElement.style.colorScheme = 'dark'; } catch {}       
+  } catch {}
+})();
+"#;
+
+const FORCE_DARK_DISABLE_SCRIPT: &str = r#"
+(() => {
+  try {
+    const id = '__AXIOM_FORCE_DARK_STYLE_ID__';
+    const style = document.getElementById(id);
+    if (style) style.remove();
+    try { document.documentElement.style.colorScheme = 'light'; } catch {}
+  } catch {}
+})();
+"#;
+
+const FORCE_DARK_CLEAR_SCRIPT: &str = r#"
+(() => {
+  try {
+    const id = '__AXIOM_FORCE_DARK_STYLE_ID__';
+    const style = document.getElementById(id);
+    if (style) style.remove();
+    try { document.documentElement.style.colorScheme = ''; } catch {}
+  } catch {}
+})();
+"#;
+
+fn force_dark_script(enabled: bool) -> String {
+    let template = if enabled {
+        FORCE_DARK_ENABLE_SCRIPT
+    } else {
+        FORCE_DARK_DISABLE_SCRIPT
+    };
+    template.replace("__AXIOM_FORCE_DARK_STYLE_ID__", FORCE_DARK_STYLE_ID)
+}
+
 const PRIVACY_INIT_SCRIPT: &str = r#"
 (() => {
   try {
@@ -137,6 +235,45 @@ impl Clone for WebviewManager {
     }
 }
 
+fn compute_content_bounds(
+    app: &AppHandle,
+    window: &Window,
+    fallback: ContentBounds,
+) -> ContentBounds {
+    let scale_factor = match window.scale_factor() {
+        Ok(factor) if factor.is_finite() && factor > 0.0 => factor,
+        _ => 1.0,
+    };
+
+    let (inner_width, inner_height) = match window.inner_size() {
+        Ok(size) => {
+            let logical = size.to_logical::<f64>(scale_factor);
+            (logical.width, logical.height)
+        }
+        Err(_) => (fallback.width + fallback.x, fallback.height + fallback.y),
+    };
+
+    // Prefer frontend-provided bounds (they track actual DOM layout), but keep them in a safe range
+    // so native content webviews never cover the sidebar/toolbar.
+    let x = fallback.x.max(SIDEBAR_WIDTH).min(inner_width);
+    let y = fallback.y.max(TOOLBAR_HEIGHT).min(inner_height);
+
+    let max_width = (inner_width - x).max(0.0);
+    let max_height = (inner_height - y).max(0.0);
+
+    let width = fallback.width.max(0.0).min(max_width);
+    let height = fallback.height.max(0.0).min(max_height);
+
+    let _ = app; // keep signature stable (future: derive bounds from state if needed)
+
+    ContentBounds {
+        x,
+        y,
+        width,
+        height,
+    }
+}
+
 #[tauri::command]
 pub async fn create_webview(
     app: AppHandle,
@@ -167,8 +304,10 @@ pub async fn create_webview(
         manager.unregister_webview(&window_label, &tab_id);
     }
 
-    // Get content bounds from manager
-    let bounds = manager.get_bounds(&window_label);
+    // Compute and store content bounds (avoid relying on frontend geometry for correctness)
+    let fallback_bounds = manager.get_bounds(&window_label);
+    let bounds = compute_content_bounds(&app, &window, fallback_bounds);
+    manager.set_bounds(&window_label, bounds);
 
     // Create the webview URL
     let webview_url = if url == "about:blank" || url.is_empty() {
@@ -192,8 +331,8 @@ pub async fn create_webview(
     let app_handle_for_download = app.clone();
     let ui_label_for_load = ui_label.clone();
     let ui_label_for_title = ui_label.clone();
-    let app_handle_for_navigation = app.clone();
-    let ui_label_for_navigation = ui_label.clone();
+    let _app_handle_for_navigation = app.clone();
+    let _ui_label_for_navigation = ui_label.clone();
     let app_handle_for_new_window = app.clone();
     let ui_label_for_new_window = ui_label.clone();
     let tab_id_for_new_window = tab_id.clone();
@@ -215,22 +354,6 @@ pub async fn create_webview(
                 return true;
             }
 
-            let url_str = url.as_str().to_string();
-            if let Some(state) = app_handle_for_navigation.try_state::<AppState>() {
-                if let Ok(should_block) =
-                    state.with_browser(|browser| Ok(browser.should_block_url(&url_str)))
-                {
-                    if should_block {
-                        let _ = app_handle_for_navigation.emit_to(
-                            ui_label_for_navigation.as_str(),
-                            "navigation-blocked",
-                            url_str,
-                        );
-                        return false;
-                    }
-                }
-            }
-
             true
         })
         .on_page_load(move |webview, payload| {
@@ -243,13 +366,14 @@ pub async fn create_webview(
                         });
                     }
                     PageLoadEvent::Finished => {
-                        let Ok((autofill_enabled, name, email, password_save_enabled)) = state
-                            .with_browser(|browser| {
+                        let Ok((autofill_enabled, name, email, password_save_enabled, theme)) =
+                            state.with_browser(|browser| {
                                 Ok((
                                     browser.get_autofill_enabled()?,
                                     browser.get_autofill_name()?,
                                     browser.get_autofill_email()?,
                                     browser.get_password_save_prompt_enabled()?,
+                                    browser.get_theme()?,
                                 ))
                             })
                         else {
@@ -262,6 +386,15 @@ pub async fn create_webview(
                         if parsed.scheme() != "http" && parsed.scheme() != "https" {
                             return;
                         }
+
+                        let theme_value = theme.as_deref();
+                        let script = match theme_value {
+                            Some("dark") => force_dark_script(true),
+                            Some("light") => force_dark_script(false),
+                            _ => FORCE_DARK_CLEAR_SCRIPT
+                                .replace("__AXIOM_FORCE_DARK_STYLE_ID__", FORCE_DARK_STYLE_ID),
+                        };
+                        let _ = webview.eval(&script);
 
                         if !password_save_enabled {
                             let _ = webview.eval(
@@ -511,6 +644,26 @@ pub async fn show_webview(app: AppHandle, window: Window, tab_id: String) -> Com
 }
 
 #[tauri::command]
+pub async fn hide_webview(app: AppHandle, window: Window, tab_id: String) -> CommandResult<()> {
+    let manager = match app.try_state::<WebviewManager>() {
+        Some(m) => m,
+        None => return CommandResult::err("WebviewManager not found".to_string()),
+    };
+
+    let label = match manager.get_webview_label(window.label(), &tab_id) {
+        Some(l) => l,
+        None => return CommandResult::ok(()), // Nothing to hide
+    };
+
+    if let Some(webview) = app.get_webview(&label) {
+        let _ = webview.hide();
+    }
+
+    tracing::info!(label = %label, "Hid webview");
+    CommandResult::ok(())
+}
+
+#[tauri::command]
 pub async fn close_webview(app: AppHandle, window: Window, tab_id: String) -> CommandResult<()> {
     let manager = match app.try_state::<WebviewManager>() {
         Some(m) => m,
@@ -545,10 +698,11 @@ pub async fn set_webview_bounds(
         None => return CommandResult::err("WebviewManager not found".to_string()),
     };
 
-    // Update stored bounds
+    // Update stored bounds (computed from window + settings to avoid DPI/layout mismatches)
     let window_label = window.label();
-    manager.set_bounds(
-        window_label,
+    let computed = compute_content_bounds(
+        &app,
+        &window,
         ContentBounds {
             x,
             y,
@@ -556,6 +710,7 @@ pub async fn set_webview_bounds(
             height,
         },
     );
+    manager.set_bounds(window_label, computed);
 
     let label = match manager.get_webview_label(window_label, &tab_id) {
         Some(l) => l,
@@ -568,8 +723,9 @@ pub async fn set_webview_bounds(
     };
 
     // Position is relative to the parent window
-    let position = LogicalPosition::new(x, y);
-    let size = LogicalSize::new(width, height);
+    let bounds = manager.get_bounds(window_label);
+    let position = LogicalPosition::new(bounds.x, bounds.y);
+    let size = LogicalSize::new(bounds.width, bounds.height);
 
     if let Err(e) = webview.set_position(position) {
         return CommandResult::err(format!("Failed to set position: {}", e));
@@ -597,10 +753,11 @@ pub async fn update_all_webview_bounds(
         None => return CommandResult::err("WebviewManager not found".to_string()),
     };
 
-    // Update stored bounds
+    // Update stored bounds (computed from window + settings to avoid DPI/layout mismatches)
     let window_label = window.label();
-    manager.set_bounds(
-        window_label,
+    let computed = compute_content_bounds(
+        &app,
+        &window,
         ContentBounds {
             x,
             y,
@@ -608,10 +765,12 @@ pub async fn update_all_webview_bounds(
             height,
         },
     );
+    manager.set_bounds(window_label, computed);
 
     // Position is relative to the parent window
-    let position = LogicalPosition::new(x, y);
-    let size = LogicalSize::new(width, height);
+    let bounds = manager.get_bounds(window_label);
+    let position = LogicalPosition::new(bounds.x, bounds.y);
+    let size = LogicalSize::new(bounds.width, bounds.height);
 
     // Update all content webviews
     let all_labels = manager.get_all_labels(window_label);

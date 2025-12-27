@@ -1,11 +1,131 @@
 //! Settings commands
 
 use serde::{Deserialize, Serialize};
-use tauri::State;
+use tauri::{AppHandle, Manager, State, Theme, Window};
 
 use super::tabs::CommandResult;
+use super::webview::WebviewManager;
 use crate::state::AppState;
 use axiom_core::Bookmark;
+
+const FORCE_DARK_STYLE_ID: &str = "axiom-force-dark";
+const FORCE_DARK_ENABLE_SCRIPT: &str = r#"
+(() => {
+  try {
+    const id = '__AXIOM_FORCE_DARK_STYLE_ID__';
+    const isTransparent = (value) => {
+      if (!value) return true;
+      const v = String(value).toLowerCase().replace(/\s+/g, '');
+      return v === 'transparent' || v === 'rgba(0,0,0,0)' || v === 'rgba(0,0,0,0.0)';
+    };
+    const parseRgb = (value) => {
+      const m = String(value).match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+      if (!m) return null;
+      return [Number(m[1]), Number(m[2]), Number(m[3])];
+    };
+    const brightness = (rgb) => (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000;
+    const getBg = (el) => {
+      try {
+        return el ? getComputedStyle(el).backgroundColor : null;
+      } catch {
+        return null;
+      }
+    };
+
+    const candidates = [];
+    candidates.push(getBg(document.body));
+    if (document.body) {
+      candidates.push(getBg(document.body.firstElementChild));
+      candidates.push(getBg(document.body.firstElementChild?.firstElementChild));
+      candidates.push(getBg(document.querySelector('main')));
+    }
+
+    let bgRgb = null;
+    for (const bg of candidates) {
+      if (isTransparent(bg)) continue;
+      const rgb = parseRgb(bg);
+      if (rgb) {
+        bgRgb = rgb;
+        break;
+      }
+    }
+    const looksDark = bgRgb ? brightness(bgRgb) < 140 : false;
+
+    let style = document.getElementById(id);
+    if (looksDark) {
+      if (style) style.remove();
+      try { document.documentElement.style.colorScheme = 'dark'; } catch {}
+      return;
+    }
+
+    if (!style) {
+      style = document.createElement('style');
+      style.id = id;
+      style.textContent = `
+html { filter: invert(1) hue-rotate(180deg) !important; background: #111 !important; }
+img, video, picture, canvas, iframe, svg { filter: invert(1) hue-rotate(180deg) !important; }
+`;
+      document.documentElement.appendChild(style);
+    }
+    try { document.documentElement.style.colorScheme = 'dark'; } catch {}       
+  } catch {}
+})();
+"#;
+
+const FORCE_DARK_DISABLE_SCRIPT: &str = r#"
+(() => {
+  try {
+    const id = '__AXIOM_FORCE_DARK_STYLE_ID__';
+    const style = document.getElementById(id);
+    if (style) style.remove();
+    try { document.documentElement.style.colorScheme = 'light'; } catch {}
+  } catch {}
+})();
+"#;
+
+fn force_dark_script(enabled: bool) -> String {
+    let template = if enabled {
+        FORCE_DARK_ENABLE_SCRIPT
+    } else {
+        FORCE_DARK_DISABLE_SCRIPT
+    };
+    template.replace("__AXIOM_FORCE_DARK_STYLE_ID__", FORCE_DARK_STYLE_ID)
+}
+
+fn apply_force_dark_to_webviews(app: &AppHandle, window_label: &str, enabled: bool) {
+    let Some(manager) = app.try_state::<WebviewManager>() else {
+        return;
+    };
+
+    let script = force_dark_script(enabled);
+    for label in manager.get_all_labels(window_label) {
+        if let Some(webview) = app.get_webview(&label) {
+            let _ = webview.eval(&script);
+        }
+    }
+}
+
+pub(crate) fn platform_theme_for(ui_theme: &str) -> Option<Theme> {
+    // On Windows, the native title bar theme appears inverted relative to the requested theme.
+    // Swap it so the window chrome matches the app theme.
+    #[cfg(windows)]
+    {
+        match ui_theme {
+            "dark" => Some(Theme::Light),
+            "light" => Some(Theme::Dark),
+            _ => None,
+        }
+    }
+
+    #[cfg(not(windows))]
+    {
+        match ui_theme {
+            "dark" => Some(Theme::Dark),
+            "light" => Some(Theme::Light),
+            _ => None,
+        }
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SettingsInfo {
@@ -52,11 +172,22 @@ pub fn set_search_engine(state: State<AppState>, engine: String) -> CommandResul
 }
 
 #[tauri::command]
-pub fn set_theme(state: State<AppState>, theme: String) -> CommandResult<()> {
+pub fn set_theme(
+    app: AppHandle,
+    window: Window,
+    state: State<AppState>,
+    theme: String,
+) -> CommandResult<()> {
     let normalized = theme.to_lowercase();
     if normalized != "light" && normalized != "dark" {
         return CommandResult::err("Unsupported theme".to_string());
     }
+
+    let platform_theme = platform_theme_for(normalized.as_str());
+
+    app.set_theme(platform_theme);
+    let _ = window.set_theme(platform_theme);
+    apply_force_dark_to_webviews(&app, window.label(), normalized == "dark");
 
     match state.with_browser(|browser| browser.set_theme(normalized)) {
         Ok(()) => CommandResult::ok(()),

@@ -27,6 +27,11 @@ pub fn run() {
             let state = AppState::new()?;
             state.initialize()?;
 
+            let initial_theme = state
+                .with_browser(|browser| browser.get_theme())
+                .ok()
+                .flatten();
+
             // Store state in Tauri
             app.manage(state);
 
@@ -44,6 +49,12 @@ pub fn run() {
                 .min_inner_size(800.0, 600.0)
                 .center()
                 .build()?;
+
+            if let Some(theme) = initial_theme.as_deref() {
+                let platform_theme = commands::settings::platform_theme_for(theme);
+                app.handle().set_theme(platform_theme);
+                let _ = window.set_theme(platform_theme);
+            }
 
             let ui_webview = WebviewBuilder::new(
                 commands::ui_webview_label(window_label),
@@ -123,6 +134,7 @@ pub fn run() {
             commands::webview::create_webview,
             commands::webview::navigate_webview,
             commands::webview::show_webview,
+            commands::webview::hide_webview,
             commands::webview::close_webview,
             commands::webview::set_webview_bounds,
             commands::webview::update_all_webview_bounds,

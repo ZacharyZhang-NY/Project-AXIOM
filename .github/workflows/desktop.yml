@@ -1,0 +1,79 @@
+name: desktop
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Optional tag to publish (e.g. v0.1.0). Leave empty to only upload workflow artifacts."
+        required: false
+        type: string
+
+jobs:
+  build:
+    name: build (${{ matrix.platform }})
+    runs-on: ${{ matrix.platform }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            bundles: "msi,nsis"
+          - platform: ubuntu-22.04
+            bundles: "deb,appimage"
+          - platform: macos-latest
+            bundles: "dmg"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            AXIOM -> target
+
+      - name: install dependencies (ubuntu only)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: build (workflow artifacts)
+        if: startsWith(github.ref, 'refs/tags/') == false && (github.event_name != 'workflow_dispatch' || github.event.inputs.tag == '')
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: AXIOM
+          uploadWorkflowArtifacts: true
+          workflowArtifactNamePattern: "axiom-[platform]-[arch]-[bundle]"
+          args: "--ci --no-sign --bundles ${{ matrix.bundles }}"
+
+      - name: publish (GitHub release)
+        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.event.inputs.tag != '')
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: AXIOM
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || github.event.inputs.tag }}
+          releaseName: "AXIOM ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || github.event.inputs.tag }}"
+          releaseBody: "See the assets to download and install this version."
+          releaseDraft: true
+          prerelease: false
+          uploadWorkflowArtifacts: true
+          workflowArtifactNamePattern: "axiom-[platform]-[arch]-[bundle]"
+          args: "--ci --no-sign --bundles ${{ matrix.bundles }}"

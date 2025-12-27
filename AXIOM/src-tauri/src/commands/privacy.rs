@@ -211,11 +211,20 @@ fn parse_abp_domains(list: &str, out: &mut HashSet<String>) {
         };
 
         let mut end = rest.len();
+        let mut delimiter = None;
         for (idx, ch) in rest.char_indices() {
             if ch == '^' || ch == '/' || ch == '$' {
                 end = idx;
+                delimiter = Some(ch);
                 break;
             }
+        }
+
+        // This parser produces a domain-only blocklist. Skip rules that target
+        // specific paths (e.g. `||example.com/foo`) to avoid overblocking the
+        // entire site.
+        if delimiter == Some('/') {
+            continue;
         }
 
         let domain = rest[..end].trim_matches('.');
